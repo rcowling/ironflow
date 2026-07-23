@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Upper Peninsula Iron Ore Transport, 1907&ndash;1951</title>
+
+<link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+<script src="https://js.arcgis.com/4.29/"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:      #f1e6cc;
+    --paper-2:    #e7d8b4;
+    --paper-3:    #dcc99e;
+    --ink:        #2a2018;
+    --ink-soft:   rgba(42,32,24,0.68);
+    --ink-faint:  rgba(42,32,24,0.35);
+    --forest:     #33513c;
+    --forest-soft:rgba(51,81,60,0.16);
+    --rust:       #b5502e;
+    --rust-soft:  rgba(181,80,46,0.16);
+    --brass:      #93712f;
+    --brass-soft: rgba(147,113,47,0.18);
+    --era-color:  #46637a;
+    --shadow:     0 8px 24px rgba(42,32,24,0.22), 0 1px 2px rgba(42,32,24,0.18);
+    --radius:     3px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    overflow: hidden;
+  }
+
+  #viewDiv {
+    position: absolute; inset: 0;
+    filter: sepia(0.32) saturate(1.18) contrast(1.04) brightness(1.03);
+  }
+
+  /* --- kill default esri chrome, we theme our own --- */
+  .esri-view .esri-view-surface--inset-outline:focus::after { outline-color: var(--rust); }
+  .esri-attribution {
+    background: transparent !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px !important;
+    color: var(--ink-soft) !important;
+    filter: sepia(0) saturate(1) contrast(1) brightness(1);
+  }
+  .esri-ui-bottom-right { filter: sepia(0) saturate(1) contrast(1) brightness(1); }
+  .esri-zoom .esri-widget--button {
+    background: var(--paper) !important;
+    color: var(--ink) !important;
+    border-bottom: 1px solid var(--paper-3) !important;
+  }
+  .esri-zoom .esri-widget--button:hover { background: var(--paper-2) !important; }
+  .esri-zoom { box-shadow: var(--shadow) !important; border-radius: var(--radius) !important; overflow: hidden; }
+  .esri-icon-plus::before, .esri-icon-minus::before { color: var(--ink) !important; }
+
+  /* ================= Loading veil ================= */
+  #loadVeil {
+    position: absolute; inset: 0; z-index: 40;
+    background: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    transition: opacity 0.6s ease;
+  }
+  #loadVeil.hidden { opacity: 0; pointer-events: none; }
+  #loadVeil .mark {
+    font-family: 'Source Serif 4', serif; font-size: 15px; letter-spacing: 0.02em;
+    color: var(--ink);
+  }
+  #loadVeil .sub {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  #loadVeil .bar {
+    width: 160px; height: 2px; background: var(--paper-3); position: relative; overflow: hidden;
+    border-radius: 2px;
+  }
+  #loadVeil .bar::after {
+    content: ''; position: absolute; left: -40%; top: 0; height: 100%; width: 40%;
+    background: var(--rust);
+    animation: sweep 1.1s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { left: -40%; }
+    100% { left: 100%; }
+  }
+
+  /* ================= Panels shared ================= */
+  .panel {
+    position: absolute; z-index: 20;
+    background: linear-gradient(180deg, var(--paper), var(--paper-2));
+    border: 1px solid var(--paper-3);
+    box-shadow: var(--shadow);
+    border-radius: var(--radius);
+  }
+
+  /* ---- Title panel ---- */
+  #titlePanel {
+    top: 18px; left: 18px;
+    padding: 14px 20px 13px 20px;
+    max-width: 360px;
+  }
+  #titlePanel .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--rust); margin-bottom: 3px;
+  }
+  #titlePanel h1 {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 700;
+    font-size: 21px; line-height: 1.15;
+    margin: 0 0 4px 0;
+    color: var(--ink);
+  }
+  #titlePanel p {
+    margin: 0; font-size: 12px; line-height: 1.4; color: var(--ink-soft);
+  }
+
+  /* ---- Era toggle ---- */
+  #eraPanel {
+    top: 18px; right: 18px;
+    padding: 10px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  }
+  #eraPanel .era-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-soft); text-align: center;
+  }
+  .era-switch {
+    position: relative;
+    display: flex;
+    background: var(--paper-3);
+    border-radius: 20px;
+    padding: 3px;
+    width: 260px;
+  }
+  .era-switch .thumb {
+    position: absolute; top: 3px; bottom: 3px; left: 3px;
+    width: calc(33.333% - 2px);
+    background: var(--ink);
+    border-radius: 16px;
+    transition: transform 0.28s cubic-bezier(.65,.05,.36,1);
+    box-shadow: 0 2px 6px rgba(42,32,24,0.35);
+  }
+  .era-switch.pos-1907 .thumb { transform: translateX(0%); }
+  .era-switch.pos-1925 .thumb { transform: translateX(calc(100% + 2px)); }
+  .era-switch.pos-1951 .thumb { transform: translateX(calc(200% + 4px)); }
+  .era-switch button {
+    position: relative; z-index: 2;
+    flex: 1; border: none; background: transparent; cursor: pointer;
+    padding: 7px 0; font-family: 'Source Serif 4', serif; font-weight: 600; font-size: 13.5px;
+    color: var(--ink-soft);
+    transition: color 0.28s ease;
+  }
+  .era-switch button.active { color: var(--paper); }
+  .era-switch button:focus-visible { outline: 2px solid var(--rust); outline-offset: 2px; border-radius: 16px; }
+
+  /* ---- Legend panel ---- */
+  #legendPanel {
+    bottom: 18px; left: 18px;
+    padding: 14px 16px;
+    width: 236px;
+  }
+  #legendPanel h2 {
+    font-family: 'Source Serif 4', serif; font-size: 13px; font-weight: 600;
+    margin: 0 0 8px 0; color: var(--ink);
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  #legendPanel h2 .yr { color: var(--rust); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .legend-row {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0;
+    font-size: 11px; color: var(--ink-soft);
+  }
+  .legend-swatch { flex: none; }
+  .legend-line { height: 2px; background: var(--era-color); width: 26px; border-radius: 2px; transition: background 0.3s ease; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink-faint); }
+  .legend-poly { width: 16px; height: 11px; background: var(--forest-soft); border: 1.5px dashed var(--forest); }
+  .legend-district { width: 16px; height: 11px; background: rgba(181,80,46,0.04); border: 1.5px dotted rgba(181,80,46,0.75); }
+  .legend-chevron {
+    width: 0; height: 0;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-bottom: 8px solid var(--era-color);
+    transition: border-bottom-color 0.3s ease;
+  }
+  .legend-divider { height: 1px; background: var(--paper-3); margin: 9px 0; }
+  .legend-stats { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-soft); line-height: 1.7; }
+  .legend-stats b { color: var(--ink); font-weight: 600; }
+  #legendPanel .flowscale {
+    display: flex; align-items: center; gap: 10px; margin-top: 4px;
+  }
+  #legendPanel .flowscale .fs-item { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  #legendPanel .flowscale .fs-item span { font-family:'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); }
+
+  /* ---- Collapse buttons (mobile) ---- */
+  .collapse-btn {
+    display: none;
+    position: absolute; z-index: 21;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--ink); color: var(--paper); border: none;
+    font-family: 'Source Serif 4', serif; font-size: 16px; line-height: 1;
+    cursor: pointer; box-shadow: var(--shadow);
+    align-items: center; justify-content: center;
+  }
+
+  /* ---- Compass flourish ---- */
+  #compass {
+    position: absolute; z-index: 15; bottom: 16px; right: 16px;
+    width: 58px; height: 58px; opacity: 0.55;
+    pointer-events: none;
+  }
+
+  /* ---- Popup theming ---- */
+  .esri-popup__main-container {
+    font-family: 'Inter', sans-serif !important;
+    background: var(--paper) !important;
+    color: var(--ink) !important;
+  }
+  .esri-popup__header-title { font-family: 'Source Serif 4', serif !important; color: var(--ink) !important; }
+  .esri-popup__pointer-direction { background: var(--paper) !important; }
+
+  @media (max-width: 680px) {
+    #titlePanel { max-width: 250px; padding: 10px 14px; }
+    #titlePanel h1 { font-size: 17px; }
+    #titlePanel p { display: none; }
+    #eraPanel { top: auto; bottom: 18px; right: 18px; }
+    .era-switch { width: 195px; }
+    #legendPanel { width: 200px; transform-origin: bottom left; transition: transform 0.25s ease, opacity 0.25s ease; }
+    #legendPanel.collapsed { transform: scale(0.001); opacity: 0; pointer-events: none; }
+    .collapse-btn { display: flex; bottom: 18px; left: 18px; }
+    #compass { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #loadVeil .bar::after { animation: none; }
+    .era-switch .thumb { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="viewDiv"></div>
+
+<div id="loadVeil">
+  <div class="mark">Upper Peninsula Iron Ore Atlas</div>
+  <div class="bar"></div>
+  <div class="sub" id="loadStatus">SURVEYING THE RANGE&hellip;</div>
+</div>
+
+<div class="panel" id="titlePanel">
+  <div class="eyebrow">Historical GIS &middot; Great Lakes</div>
+  <h1>Iron Ore, Rail &amp; Water</h1>
+  <p>Ore moved from the Marquette, Menominee &amp; Gogebic ranges to Great Lakes port cities by rail and dock. Line weight shows tonnage; motion shows the direction ore travelled.</p>
+</div>
+
+<button class="collapse-btn" id="legendToggleBtn" aria-label="Toggle legend" aria-expanded="true">&#9776;</button>
+
+<div class="panel" id="eraPanel">
+  <div class="era-label">Transport Era</div>
+  <div class="era-switch pos-1907" id="eraSwitch">
+    <div class="thumb"></div>
+    <button type="button" id="btn1907" class="active" aria-pressed="true">1907</button>
+    <button type="button" id="btn1925" aria-pressed="false">1925</button>
+    <button type="button" id="btn1951" aria-pressed="false">1951</button>
+  </div>
+</div>
+
+<div class="panel" id="legendPanel">
+  <h2>Ore Routes <span class="yr" id="legendYear">1907</span></h2>
+
+  <div class="legend-row"><div class="legend-swatch legend-line"></div> Ore transport route</div>
+  <div class="legend-row"><div class="legend-swatch legend-chevron"></div> Direction ore travelled</div>
+  <div class="legend-row"><div class="legend-swatch legend-poly"></div> Iron range boundary</div>
+  <div class="legend-row" id="legendDistrictsRow" style="display:none;"><div class="legend-swatch legend-district"></div> Iron mining district <span style="opacity:0.6;">(1951 only)</span></div>
+  <div class="legend-row"><div class="legend-swatch legend-dot"></div> Port city</div>
+
+  <div class="legend-divider"></div>
+
+  <div class="flowscale" id="flowScale"></div>
+
+  <div class="legend-divider"></div>
+
+  <div class="legend-stats" id="legendStats">
+    Loading route statistics&hellip;
+  </div>
+</div>
+
+<svg id="compass" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="46" fill="none" stroke="#2a2018" stroke-width="1"/>
+  <line x1="50" y1="6" x2="50" y2="94" stroke="#2a2018" stroke-width="0.75"/>
+  <line x1="6" y1="50" x2="94" y2="50" stroke="#2a2018" stroke-width="0.75"/>
+  <polygon points="50,10 44,50 50,44 56,50" fill="#b5502e"/>
+  <polygon points="50,90 44,50 50,56 56,50" fill="#2a2018"/>
+  <text x="50" y="22" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#2a2018">N</text>
+</svg>
+
+<script>
+require([
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/FeatureLayer",
+  "esri/layers/GraphicsLayer",
+  "esri/Graphic",
+  "esri/geometry/Point"
+], function (Map, MapView, FeatureLayer, GraphicsLayer, Graphic, Point) {
+
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Config
+  // ---------------------------------------------------------------------
+  var URLS = {
+    routes1951: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Ore_Transport_Routes_1951/FeatureServer/0",
+    routes1925: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Iron_Ore_Transport_Routes_1925/FeatureServer/0",
+    routes1907: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Ore_Transport_Routes_1907/FeatureServer/0",
+    boundaries1951: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Iron_Range_Boundaries/FeatureServer/0",
+    cities1951: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Iron_Range_Port_Cities/FeatureServer/0",
+    boundaries1925: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/IRBoundaries1925_Erase/FeatureServer/0",
+    cities1925: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/cities_1925/FeatureServer/0",
+    boundaries1907: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Iron_Range_Boundaries_1907/FeatureServer/0",
+    districts1951: "https://services2.arcgis.com/RPhrOu9XQzI31xTa/arcgis/rest/services/Iron_Districts_1951/FeatureServer/0"
+  };
+
+  var COLOR_1907 = [70, 99, 122];    // ledger slate-blue
+  var COLOR_1925 = [147, 113, 47];   // brass
+  var COLOR_1951 = [181, 80, 46];    // rust
+  var ERA_COLORS = { "1907": COLOR_1907, "1925": COLOR_1925, "1951": COLOR_1951 };
+  var TONS_FIELD = "Tons";
+  var LINE_MIN_SIZE = 1.25;
+  var LINE_MAX_SIZE = 8.5;
+
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------------------------------------------------------------------
+  // Map & view
+  // ---------------------------------------------------------------------
+  var map = new Map({ basemap: "gray-vector" });
+
+  var view = new MapView({
+    container: "viewDiv",
+    map: map,
+    center: [-88.0, 46.6],
+    zoom: 7,
+    ui: { components: ["zoom"] },
+    constraints: { snapToZoom: false }
+  });
+  view.ui.move("zoom", "bottom-right");
+  view.popup.dockEnabled = false;
+  view.popup.collapseEnabled = false;
+
+  // ---------------------------------------------------------------------
+  // Layers
+  // ---------------------------------------------------------------------
+  function makeBoundariesLayer(url, title) {
+    return new FeatureLayer({
+      url: url,
+      title: title,
+      visible: false,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-fill",
+          color: [51, 81, 60, 0.13],
+          outline: { color: [51, 81, 60, 0.85], width: 1.4, style: "short-dash" }
+        }
+      }
+    });
+  }
+
+  function makeCitiesLayer(url, title) {
+    return new FeatureLayer({
+      url: url,
+      title: title,
+      visible: false,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-marker",
+          style: "circle",
+          size: 9,
+          color: [42, 32, 24, 1],
+          outline: { color: [241, 230, 204, 1], width: 2 }
+        }
+      }
+    });
+  }
+
+  function makeDistrictsLayer(url, title) {
+    return new FeatureLayer({
+      url: url,
+      title: title,
+      visible: false,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-fill",
+          color: [181, 80, 46, 0.04],
+          outline: { color: [181, 80, 46, 0.75], width: 1, style: "dot" }
+        }
+      }
+    });
+  }
+
+  var boundaries1925 = makeBoundariesLayer(URLS.boundaries1925, "Iron Range Boundaries 1925");
+  var boundaries1951 = makeBoundariesLayer(URLS.boundaries1951, "Iron Range Boundaries 1951");
+  var boundaries1907 = makeBoundariesLayer(URLS.boundaries1907, "Iron Range Boundaries 1907");
+  var cities1925 = makeCitiesLayer(URLS.cities1925, "Port Cities 1925");
+  var cities1951 = makeCitiesLayer(URLS.cities1951, "Port Cities 1951 / 1907");
+  var districts1951 = makeDistrictsLayer(URLS.districts1951, "Iron Districts 1951");
+
+  function makeRouteLayer(url, title, color) {
+    return new FeatureLayer({
+      url: url,
+      title: title,
+      visible: false,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-line",
+          color: color.concat([0.82]),
+          cap: "round",
+          join: "round"
+        },
+        visualVariables: []
+      }
+    });
+  }
+
+  var routes1925 = makeRouteLayer(URLS.routes1925, "Ore Transport Routes 1925", COLOR_1925);
+  var routes1951 = makeRouteLayer(URLS.routes1951, "Ore Transport Routes 1951", COLOR_1951);
+  var routes1907 = makeRouteLayer(URLS.routes1907, "Ore Transport Routes 1907", COLOR_1907);
+  routes1907.visible = true;
+  boundaries1907.visible = true;
+  cities1951.visible = true;
+
+  var flowLayer = new GraphicsLayer({ title: "Ore Flow Animation", listMode: "hide" });
+
+  map.addMany([routes1907, routes1925, routes1951, flowLayer, boundaries1907, boundaries1925, boundaries1951, districts1951, cities1925, cities1951]);
+
+  // ---------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------
+  function prettify(name) {
+    return name.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+
+  function fmt(n) {
+    if (n === null || n === undefined || isNaN(n)) return "—";
+    return Math.round(n).toLocaleString("en-US");
+  }
+
+  function rgbToHex(rgb) {
+    return "#" + rgb.map(function (c) { return c.toString(16).padStart(2, "0"); }).join("");
+  }
+
+  function widthForTons(tons, stats) {
+    if (!stats || stats.max <= stats.min) return LINE_MIN_SIZE;
+    var n = (tons - stats.min) / (stats.max - stats.min);
+    return LINE_MIN_SIZE + n * (LINE_MAX_SIZE - LINE_MIN_SIZE);
+  }
+
+  function renderFlowScale(stats, colorHex) {
+    var el = document.getElementById("flowScale");
+    if (!stats || stats.count === 0) { el.innerHTML = ""; return; }
+    var mid = (stats.min + stats.max) / 2;
+    var samples = [
+      { tons: stats.min, label: fmt(stats.min) },
+      { tons: mid, label: fmt(mid) },
+      { tons: stats.max, label: fmt(stats.max) }
+    ];
+    el.innerHTML = samples.map(function (s) {
+      var w = widthForTons(s.tons, stats);
+      var h = Math.max(6, w + 4);
+      var svgW = 30;
+      var y = h / 2;
+      return '<div class="fs-item"><svg width="' + svgW + '" height="' + h + '">' +
+        '<line x1="0" y1="' + y + '" x2="' + svgW + '" y2="' + y + '" stroke="' + colorHex + '" stroke-width="' + w.toFixed(1) + '" stroke-linecap="round"/>' +
+        '</svg><span>' + s.label + ' t</span></div>';
+    }).join("");
+  }
+
+  function findFieldLike(fields, regex) {
+    var f = fields.find(function (fld) { return regex.test(fld.name); });
+    return f ? f.name : null;
+  }
+
+  function buildPopupTemplate(layer, fallbackTitle, opts) {
+    opts = opts || {};
+    var exclude = ["OBJECTID", "Shape__Length", "Shape__Area", "GlobalID", "Shape"];
+    var fields = layer.fields.filter(function (f) {
+      return exclude.indexOf(f.name) === -1 && f.type !== "geometry";
+    });
+
+    var fieldInfos = fields.map(function (f) {
+      var isNumeric = (f.type === "double" || f.type === "integer" || f.type === "single" || f.type === "small-integer");
+      return {
+        fieldName: f.name,
+        label: prettify(f.name),
+        visible: true,
+        format: isNumeric ? { digitSeparator: true, places: 0 } : undefined
+      };
+    });
+
+    var title = fallbackTitle;
+    if (opts.titleFields) {
+      var a = findFieldLike(fields, opts.titleFields[0]);
+      var b = findFieldLike(fields, opts.titleFields[1]);
+      if (a && b) title = "{" + a + "} \u2192 {" + b + "}";
+      else if (a) title = "{" + a + "}";
+    } else if (opts.nameField) {
+      var n = findFieldLike(fields, opts.nameField);
+      if (n) title = "{" + n + "}";
+    }
+
+    return {
+      title: title,
+      content: [{ type: "fields", fieldInfos: fieldInfos }]
+    };
+  }
+
+  // The Tons field is stored as text on these services (not numeric), so
+  // server-side outStatistics (min/max/sum) is rejected. Parse client-side instead.
+  function parseTons(raw) {
+    if (raw === null || raw === undefined) return 0;
+    var n = parseFloat(String(raw).replace(/[,\s]/g, ""));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function computeStatsFromValues(values) {
+    if (!values.length) return { min: 0, max: 1, sum: 0, count: 0 };
+    var min = Infinity, max = -Infinity, sum = 0;
+    values.forEach(function (v) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += v;
+    });
+    if (min === max) { min = 0; } // avoid zero-width scale when all values equal
+    return { min: min, max: max, sum: sum, count: values.length };
+  }
+
+  // Arc-length model of a polyline's longest path, for animation interpolation
+  function buildLineModel(geometry, attributes) {
+    if (!geometry || !geometry.paths || !geometry.paths.length) return null;
+    var longest = geometry.paths[0], maxLen = 0;
+    geometry.paths.forEach(function (p) {
+      var len = 0;
+      for (var i = 1; i < p.length; i++) {
+        len += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+      }
+      if (len > maxLen) { maxLen = len; longest = p; }
+    });
+    var cum = [0];
+    for (var i = 1; i < longest.length; i++) {
+      cum.push(cum[i - 1] + Math.hypot(longest[i][0] - longest[i - 1][0], longest[i][1] - longest[i - 1][1]));
+    }
+    if (cum[cum.length - 1] === 0) return null;
+    return {
+      vertices: longest,
+      cum: cum,
+      total: cum[cum.length - 1],
+      tons: attributes && attributes[TONS_FIELD] != null ? attributes[TONS_FIELD] : 0,
+      sr: geometry.spatialReference
+    };
+  }
+
+  function pointOnModel(model, t) {
+    var target = t * model.total;
+    var cum = model.cum, verts = model.vertices;
+    var i = 1;
+    while (i < cum.length && cum[i] < target) i++;
+    if (i >= cum.length) i = cum.length - 1;
+    var segStart = cum[i - 1], segEnd = cum[i];
+    var segT = segEnd > segStart ? (target - segStart) / (segEnd - segStart) : 0;
+    var p0 = verts[i - 1], p1 = verts[i];
+    var x = p0[0] + (p1[0] - p0[0]) * segT;
+    var y = p0[1] + (p1[1] - p0[1]) * segT;
+    var mathAngle = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) * 180 / Math.PI;
+    var esriAngle = (90 - mathAngle + 360) % 360; // clockwise-from-north for esri marker "angle"
+    return { x: x, y: y, angle: esriAngle };
+  }
+
+  // ---------------------------------------------------------------------
+  // Route data cache: { year: { models: [...], stats: {...} } }
+  // ---------------------------------------------------------------------
+  var routeData = { "1907": null, "1925": null, "1951": null };
+  var currentYear = "1907";
+  var chevrons = []; // {graphic, model, phase, count-index within route}
+
+  function loadRouteData(layer, year) {
+    return layer.queryFeatures({
+      where: "1=1",
+      outFields: [TONS_FIELD],
+      returnGeometry: true,
+      outSpatialReference: view.spatialReference
+    }).then(function (featureSet) {
+      var tonsValues = [];
+      var models = featureSet.features
+        .map(function (feat) {
+          var tons = parseTons(feat.attributes[TONS_FIELD]);
+          tonsValues.push(tons);
+          var m = buildLineModel(feat.geometry, { Tons: tons });
+          return m;
+        })
+        .filter(function (m) { return m; });
+      var stats = computeStatsFromValues(tonsValues);
+      routeData[year] = { models: models, stats: stats };
+      return routeData[year];
+    });
+  }
+
+  function chevronCountForTons(tons, stats) {
+    if (!stats || stats.max <= stats.min) return 2;
+    var n = (tons - stats.min) / (stats.max - stats.min);
+    return Math.max(2, Math.min(6, Math.round(2 + n * 4)));
+  }
+
+  function chevronSizeForTons(tons, stats) {
+    if (!stats || stats.max <= stats.min) return 8;
+    var n = (tons - stats.min) / (stats.max - stats.min);
+    return 6 + n * 7;
+  }
+
+  function buildFlowGraphics(year) {
+    flowLayer.removeAll();
+    chevrons = [];
+    var data = routeData[year];
+    if (!data) return;
+    var color = ERA_COLORS[year] || COLOR_1925;
+
+    data.models.forEach(function (model) {
+      var count = reduceMotion ? 1 : chevronCountForTons(model.tons, data.stats);
+      var size = chevronSizeForTons(model.tons, data.stats);
+      for (var k = 0; k < count; k++) {
+        var phase = reduceMotion ? 0.5 : (k / count);
+        var graphic = new Graphic({
+          geometry: new Point({ x: model.vertices[0][0], y: model.vertices[0][1], spatialReference: model.sr }),
+          symbol: {
+            type: "simple-marker",
+            style: "triangle",
+            size: size,
+            color: color.concat([0.92]),
+            outline: { color: [241, 230, 204, 0.9], width: 0.75 },
+            angle: 0
+          }
+        });
+        chevrons.push({ graphic: graphic, model: model, phase: phase });
+        flowLayer.add(graphic);
+      }
+    });
+  }
+
+  var speed = 0.00006; // fraction of route per ms baseline
+  var animRunning = true;
+  var lastTs = null;
+
+  function tick(ts) {
+    if (!animRunning) { lastTs = ts; requestAnimationFrame(tick); return; }
+    if (lastTs === null) lastTs = ts;
+    var dt = ts - lastTs;
+    lastTs = ts;
+
+    if (!reduceMotion) {
+      chevrons.forEach(function (c) {
+        c.phase = (c.phase + speed * dt) % 1;
+        var pt = pointOnModel(c.model, c.phase);
+        c.graphic.geometry = new Point({ x: pt.x, y: pt.y, spatialReference: c.model.sr });
+        var sym = c.graphic.symbol.clone();
+        sym.angle = pt.angle;
+        c.graphic.symbol = sym;
+      });
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  document.addEventListener("visibilitychange", function () {
+    animRunning = !document.hidden;
+  });
+
+  // ---------------------------------------------------------------------
+  // Legend stats text
+  // ---------------------------------------------------------------------
+  function updateLegendStats(year) {
+    var data = routeData[year];
+    var colorRgb = ERA_COLORS[year] || COLOR_1925;
+    var colorHex = rgbToHex(colorRgb);
+    document.documentElement.style.setProperty("--era-color", colorHex);
+    document.getElementById("legendYear").textContent = year;
+    if (!data) {
+      document.getElementById("legendStats").innerHTML = "Loading route statistics&hellip;";
+      renderFlowScale(null, colorHex);
+      return;
+    }
+    var s = data.stats;
+    document.getElementById("legendStats").innerHTML =
+      "<b>" + s.count + "</b> routes &middot; <b>" + fmt(s.sum) + "</b> tons total<br/>" +
+      "Range " + fmt(s.min) + " &ndash; " + fmt(s.max) + " tons / route";
+    renderFlowScale(s, colorHex);
+  }
+
+  // ---------------------------------------------------------------------
+  // Era toggle wiring
+  // ---------------------------------------------------------------------
+  var eraSwitch = document.getElementById("eraSwitch");
+  var btn1907 = document.getElementById("btn1907");
+  var btn1925 = document.getElementById("btn1925");
+  var btn1951 = document.getElementById("btn1951");
+  var eraButtons = { "1907": btn1907, "1925": btn1925, "1951": btn1951 };
+
+  var yearExtents = { "1907": null, "1925": null, "1951": null };
+
+  function setYear(year) {
+    currentYear = year;
+    routes1907.visible = (year === "1907");
+    routes1925.visible = (year === "1925");
+    routes1951.visible = (year === "1951");
+    boundaries1907.visible = (year === "1907");
+    boundaries1925.visible = (year === "1925");
+    boundaries1951.visible = (year === "1951");
+    // cities1951 doubles as the port-city set for 1907 (no separate 1907 service)
+    cities1925.visible = (year === "1925");
+    cities1951.visible = (year === "1951" || year === "1907");
+    districts1951.visible = (year === "1951");
+
+    var legendDistrictsRow = document.getElementById("legendDistrictsRow");
+    if (legendDistrictsRow) legendDistrictsRow.style.display = (year === "1951") ? "flex" : "none";
+
+    ["1907", "1925", "1951"].forEach(function (y) {
+      eraSwitch.classList.toggle("pos-" + y, year === y);
+      eraButtons[y].classList.toggle("active", year === y);
+      eraButtons[y].setAttribute("aria-pressed", year === y);
+    });
+
+    updateLegendStats(year);
+    buildFlowGraphics(year);
+
+    if (yearExtents[year]) {
+      view.goTo({ target: yearExtents[year].expand(1.35) }, { duration: 1100, easing: "ease-in-out" });
+    }
+  }
+
+  btn1907.addEventListener("click", function () { setYear("1907"); });
+  btn1925.addEventListener("click", function () { setYear("1925"); });
+  btn1951.addEventListener("click", function () { setYear("1951"); });
+
+  // ---------------------------------------------------------------------
+  // Mobile legend collapse
+  // ---------------------------------------------------------------------
+  var legendPanel = document.getElementById("legendPanel");
+  var legendToggleBtn = document.getElementById("legendToggleBtn");
+  legendToggleBtn.addEventListener("click", function () {
+    var collapsed = legendPanel.classList.toggle("collapsed");
+    legendToggleBtn.setAttribute("aria-expanded", String(!collapsed));
+  });
+
+  // ---------------------------------------------------------------------
+  // Startup sequence
+  // ---------------------------------------------------------------------
+  var statusEl = document.getElementById("loadStatus");
+  var veil = document.getElementById("loadVeil");
+
+  function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+
+  view.when(function () {
+    setStatus("LOADING RANGE BOUNDARIES\u2026");
+
+    Promise.all([boundaries1925.load(), boundaries1951.load(), boundaries1907.load(), cities1925.load(), cities1951.load(), routes1925.load(), routes1951.load(), routes1907.load(), districts1951.load()])
+      .then(function () {
+        setStatus("STYLING PORT CITIES\u2026");
+
+        // Dynamic city labeling using whatever "name-like" field exists, applied to both eras
+        [cities1925, cities1951].forEach(function (layer) {
+          var cityNameField = findFieldLike(layer.fields, /name/i);
+          if (cityNameField) {
+            layer.labelingInfo = [{
+              symbol: {
+                type: "text",
+                color: [42, 32, 24, 1],
+                haloColor: [241, 230, 204, 0.95],
+                haloSize: 1.5,
+                font: { family: "Inter", size: 10.5, weight: "bold" }
+              },
+              labelExpressionInfo: { expression: "$feature." + cityNameField },
+              labelPlacement: "above-center",
+              minScale: 0
+            }];
+            layer.labelsVisible = true;
+          }
+          layer.popupTemplate = buildPopupTemplate(layer, "Port City", { nameField: /name/i });
+        });
+
+        [boundaries1925, boundaries1951, boundaries1907].forEach(function (layer) {
+          layer.popupTemplate = buildPopupTemplate(layer, "Iron Range", { nameField: /name|range/i });
+          var rangeNameField = findFieldLike(layer.fields, /name/i);
+          if (rangeNameField) {
+            layer.labelingInfo = [{
+              symbol: {
+                type: "text",
+                color: [51, 81, 60, 0.95],
+                haloColor: [241, 230, 204, 0.9],
+                haloSize: 1.25,
+                font: { family: "Source Serif 4", size: 12, style: "italic", weight: "normal" }
+              },
+              labelExpressionInfo: { expression: "$feature." + rangeNameField },
+              labelPlacement: "always-horizontal",
+              minScale: 0
+            }];
+            layer.labelsVisible = true;
+          }
+        });
+
+        setStatus("PLOTTING ORE ROUTES\u2026");
+
+        var districtNameField = findFieldLike(districts1951.fields, /name/i);
+        districts1951.popupTemplate = buildPopupTemplate(districts1951, "Iron District", { nameField: /name/i });
+        if (districtNameField) {
+          districts1951.labelingInfo = [{
+            symbol: {
+              type: "text",
+              color: [181, 80, 46, 0.9],
+              haloColor: [241, 230, 204, 0.9],
+              haloSize: 1,
+              font: { family: "Inter", size: 9, weight: "bold" }
+            },
+            labelExpressionInfo: { expression: "Upper($feature." + districtNameField + ")" },
+            labelPlacement: "always-horizontal",
+            minScale: 0
+          }];
+          districts1951.labelsVisible = true;
+        }
+
+        [{ layer: routes1925, year: "1925" }, { layer: routes1951, year: "1951" }, { layer: routes1907, year: "1907" }].forEach(function (item) {
+          item.layer.popupTemplate = buildPopupTemplate(item.layer, "Ore Route", { titleFields: [/origin|from|source|range/i, /destination|to$|to_|port|dest/i] });
+        });
+
+        return Promise.all([
+          loadRouteData(routes1925, "1925"),
+          loadRouteData(routes1951, "1951"),
+          loadRouteData(routes1907, "1907")
+        ]);
+      })
+      .then(function () {
+        setStatus("CALIBRATING TONNAGE SCALE\u2026");
+
+        [{ layer: routes1925, year: "1925", color: COLOR_1925 }, { layer: routes1951, year: "1951", color: COLOR_1951 }, { layer: routes1907, year: "1907", color: COLOR_1907 }].forEach(function (item) {
+          var stats = routeData[item.year].stats;
+          item.layer.renderer = {
+            type: "simple",
+            symbol: {
+              type: "simple-line",
+              color: item.color.concat([0.82]),
+              cap: "round",
+              join: "round"
+            },
+            visualVariables: [{
+              type: "size",
+              valueExpression: "var v = Number(Replace($feature." + TONS_FIELD + ", ',', '')); return IIf(IsNaN(v), 0, v);",
+              valueExpressionTitle: "Tons of ore",
+              minDataValue: stats.min,
+              maxDataValue: stats.max,
+              minSize: LINE_MIN_SIZE,
+              maxSize: LINE_MAX_SIZE
+            }]
+          };
+        });
+
+        updateLegendStats(currentYear);
+        buildFlowGraphics(currentYear);
+
+        // per-era extent, so toggling eras re-frames the map to that era's actual coverage
+        return Promise.all([
+          boundaries1925.queryExtent(), cities1925.queryExtent(),
+          boundaries1951.queryExtent(), cities1951.queryExtent(),
+          boundaries1907.queryExtent()
+        ]);
+      })
+      .then(function (extents) {
+        function unionOf(list) {
+          var target = null;
+          list.forEach(function (e) {
+            if (e && e.extent) target = target ? target.union(e.extent) : e.extent;
+          });
+          return target;
+        }
+        yearExtents["1925"] = unionOf([extents[0], extents[1]]);
+        yearExtents["1951"] = unionOf([extents[2], extents[3]]);
+        // 1907 reuses the 1951 city set; combine with the 1907 boundary extent
+        yearExtents["1907"] = unionOf([extents[4], extents[3]]);
+
+        var initial = yearExtents[currentYear];
+        if (initial) {
+          return view.goTo({ target: initial.expand(1.35) }, { duration: 1400, easing: "ease-in-out" });
+        }
+      })
+      .then(function () {
+        veil.classList.add("hidden");
+      })
+      .catch(function (err) {
+        console.error("Iron Ore Atlas load error:", err);
+        setStatus("A layer could not load \u2014 see console");
+      });
+  }, function (err) {
+    console.error("View failed to load:", err);
+    setStatus("Map failed to load \u2014 see console");
+  });
+
+});
+</script>
+</body>
+</html>
